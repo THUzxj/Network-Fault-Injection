@@ -8,7 +8,7 @@ import logging
 from tcnetempy.TcNetem import TcNetem
 from tcnetempy.Fault import *
 from tcnetempy.Event import FaultEvent
-from tcnetempy.utils import get_interfaces
+from tcnetempy.utils import get_interfaces, calculate_time
 
 # Fault Injection Campaign
 
@@ -57,6 +57,8 @@ if __name__ == "__main__":
         args.log = f"logs/{datetime.now().strftime('%Y-%m-%d-%H:%M:%S')}.log"
         print("log file: ", args.log)
 
+    
+
     logging.basicConfig(level=logging.DEBUG,
                         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                         handlers=[
@@ -69,10 +71,14 @@ if __name__ == "__main__":
         devices = devices[:args.interface_num]
     logging.info(f"Devices: {devices}")
 
+    fault_values_sets = list(itertools.product(devices, *[fault["values"] for fault in FAULTS]))
+
+    fault_values_sets = [fault_values for fault_values in fault_values_sets if sum(fault_values[1:]) != 0]
+
+    print("The fault injection will take about", calculate_time(args.padding, args.duation, len(fault_values_sets)), "seconds.")
+
     try:
-        for fault_values in itertools.product(devices, *[fault["values"] for fault in FAULTS]):
-            if sum(fault_values[1:]) == 0:
-                continue
+        for fault_values in fault_values_sets:
             device = fault_values[0]
             faults = [
                 Delay(time=f"{fault_values[1]}ms", jitter="20ms"),
