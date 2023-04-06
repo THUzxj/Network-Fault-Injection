@@ -16,7 +16,7 @@ def get_args():
     parser = argparse.ArgumentParser(description='Process args for retrieving arguments')
 
     # log file
-    parser.add_argument('-l', "--log", help="log file", required=True, type=str)
+    parser.add_argument('-l', "--log", help="log file", default=None, type=str)
 
     # schedule
     parser.add_argument("-p", "--padding", help="padding_time (second)", required=True, type=int)
@@ -51,6 +51,12 @@ FAULTS = [
 
 if __name__ == "__main__":
     args = get_args()
+
+    if args.log is None:
+        os.makedirs("logs", exist_ok=True)
+        args.log = f"logs/{datetime.now().strftime('%Y-%m-%d-%H:%M:%S')}.log"
+        print("log file: ", args.log)
+
     logging.basicConfig(level=logging.DEBUG,
                         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                         handlers=[
