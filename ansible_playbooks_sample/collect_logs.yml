@@ -1,0 +1,6 @@
+- hosts: all
+  tasks:
+  - synchronize:
+      src: /home/vagrant/logs
+      dest: ./logs/{{ inventory_hostname }}_logs
+      mode: pull

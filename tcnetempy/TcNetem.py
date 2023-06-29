@@ -13,6 +13,12 @@ class TcNetem:
         for fault in self.faults:
             command += f" {fault.build_command()}"
         return command.strip()
+    
+    def build_delete_command(self) -> str:
+        return f"tc qdisc del dev {self.interface} root netem"
+
+    def build_campaign_command(self, duation) -> str:
+        return f"{self.build_command()}; sleep {duation}; {self.build_delete_command()}"
 
     def add_faults(self, faults: List[Fault]):
         self.faults.extend(faults)
@@ -20,6 +26,11 @@ class TcNetem:
     def start(self):
         logging.info(f"Start fault injection: {self.build_command()}")
         command = self.build_command()
+        subprocess.run(command.split())
+
+    def start_campaign(self, duation):
+        logging.info(f"Start fault injection campaign : {self.build_campaign_command(duation)}")
+        command = self.build_campaign_command()
         subprocess.run(command.split())
 
     def delete(self):

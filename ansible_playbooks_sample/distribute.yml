@@ -1,0 +1,8 @@
+- hosts: all
+  tasks:
+  - name: Copy code
+    ansible.builtin.copy:
+      src: /path/to/Network-Fault-Injection
+      dest: /home/vagrant
+      owner: vagrant
+      group: vagrant

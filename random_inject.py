@@ -11,6 +11,7 @@ import itertools
 import logging
 import shutil
 import json
+import random
 
 from collections import namedtuple
 
@@ -75,8 +76,11 @@ def get_args():
     parser.add_argument("--log_dir", help="log directory", default=DEFAULT_LOG_PATH, type=str)
 
     # schedule
-    parser.add_argument("-p", "--padding", help="padding_time (second)", required=True, type=int)
+    parser.add_argument("-pmin", "--padding_min", help="padding_time (second)", type=int)
+    parser.add_argument("-pmax", "--padding_max", type=int)
     parser.add_argument("-d", "--duation", help="fault injection duation (second)", required=True, type=int)
+    # parser.add_argument("-dmin", "--duation_min", help="fault injection duation (second)", type=int)
+    # parser.add_argument("-dmax", "--duation_max", type=int)
 
     parser.add_argument("--dry", action="store_true", help="dry run")
 
@@ -85,7 +89,7 @@ def get_args():
     parser.add_argument("-g", "--group", type=str)
     parser.add_argument("-H", "--hosts", type=str)
     parser.add_argument("-i", "--inventory", required=True, type=str)
-    parser.add_argument("-m", "--mode", required=True)
+    # parser.add_argument("-m", "--mode", required=True)
 
     return parser.parse_args()
 
@@ -158,93 +162,94 @@ if __name__ == "__main__":
 
     stressNg = StressNg()
 
-    if args.mode == "network":
-        devices = get_interfaces()
-        devices = [ device for device in devices if device != "lo" and not device.startswith("v") and not device.startswith("b")]
-        if args.interface_num:
-            devices = devices[:args.interface_num]
-        # logging.info(f"Devices: {devices}")
-        print(f"Devices: {devices}")
-        commands = [TcNetem(interface=device, faults=[
-            Delay(time=f"{fault_values[0]}ms", jitter="20ms"),
-            Loss(rate=f"{fault_values[1]}%", correlation="25%"),
-        ]).build_campaign_command(args.duation) for device in devices for fault_values in NETWORK_FAULTS]
-    elif args.mode == "cpu":
-        commands = [stressNg.cpu(fault, args.duation) for fault in CPU_FAULTS]
-    elif args.mode == "memory":
-        commands = [stressNg.memory(vm=fault, vm_bytes="1G", vm_hang=args.duation, timeout=args.duation) for fault in MEMORY_FAULTS]
-    elif args.mode == "disk":
-        commands = [stressNg.disk(io=fault, hdd=fault, timeout=args.duation) for fault in DISK_FAULTS]
+    devices = get_interfaces()
+    devices = [ device for device in devices if device != "lo" and not device.startswith("v") and not device.startswith("b")]
+    if args.interface_num:
+        devices = devices[:args.interface_num]
+    # logging.info(f"Devices: {devices}")
+    print(f"Devices: {devices}")
+    network_commands = [TcNetem(interface=device, faults=[
+        Delay(time=f"{fault_values[0]}ms", jitter="20ms"),
+        Loss(rate=f"{fault_values[1]}%", correlation="25%"),
+    ]).build_campaign_command(args.duation) for device in devices for fault_values in NETWORK_FAULTS]
 
-    print(commands)
+    all_commands = []
+    all_commands.extend(network_commands)
+    all_commands.extend([stressNg.cpu(fault, args.duation) for fault in CPU_FAULTS])
+    all_commands.extend([stressNg.memory(vm=fault, vm_bytes="1G", vm_hang=args.duation, timeout=args.duation) for fault in MEMORY_FAULTS])
+    all_commands.extend([stressNg.disk(io=fault, hdd=fault, timeout=args.duation) for fault in DISK_FAULTS])
+
+    print(all_commands)
     
     if args.dry:
         exit(0)
 
-    while True:
-        for command in commands:
-            tqm = TaskQueueManager(
-                inventory=inventory,
-                variable_manager=variable_manager,
-                loader=loader,
-                passwords=passwords,
-                stdout_callback=results_callback,  # Use our custom callback instead of the ``default`` callback plugin, which prints to stdout
-            )
+    while True: 
+        tqm = TaskQueueManager(
+            inventory=inventory,
+            variable_manager=variable_manager,
+            loader=loader,
+            passwords=passwords,
+            stdout_callback=results_callback,  # Use our custom callback instead of the ``default`` callback plugin, which prints to stdout
+        )
 
-            play_source = dict(
-                name="Ansible Play",
-                hosts=host_list,
-                gather_facts='no',
-                tasks=[
-                    # dict(action=dict(module='shell', args='ls'), register='shell_out'),
-                    # dict(action=dict(module='debug', args=dict(msg='{{shell_out.stdout}}'))),
-                    # dict(action=dict(module='command', args=dict(cmd='/usr/bin/uptime'))),
-                    dict(
-                        action=dict(module='command',
-                                    args=dict(
-                                        cmd= command,
-                                        chdir="/root"
-                                    ),
-                                ), register="shell_out"
-                    ),
-                    # dict(
-                    #     action=dict(module='debug', args=dict(msg='{{shell_out.stdout}}'))
-                    # )
-                ],
-                # become="true",
-                # become_user="root"
-            )
-            print(play_source)
-            logging.info(f"Start_fault_injection, {host_list}, {command}")
-            play = Play().load(play_source, variable_manager=variable_manager, loader=loader)
+        # choose a command randomly
+        command = all_commands[random.randint(0, len(all_commands) -1)]
 
-            # Actually run it
-            try:
-                result = tqm.run(play)  # most interesting data for a play is actually sent to the callback's methods
-            except Exception as e:
-                print(e)
-            finally:
-                # we always need to cleanup child procs and the structures we use to communicate with them
-                tqm.cleanup()
-                if loader:
-                    loader.cleanup_all_tmp_files()
+        play_source = dict(
+            name="Ansible Play",
+            hosts=host_list,
+            gather_facts='no',
+            tasks=[
+                # dict(action=dict(module='shell', args='ls'), register='shell_out'),
+                # dict(action=dict(module='debug', args=dict(msg='{{shell_out.stdout}}'))),
+                # dict(action=dict(module='command', args=dict(cmd='/usr/bin/uptime'))),
+                dict(
+                    action=dict(module='command',
+                                args=dict(
+                                    cmd= command,
+                                    chdir="/root"
+                                ),
+                            ), register="shell_out"
+                ),
+                # dict(
+                #     action=dict(module='debug', args=dict(msg='{{shell_out.stdout}}'))
+                # )
+            ],
+            # become="true",
+            # become_user="root"
+        )
+        print(play_source)
+        logging.info(f"Start_fault_injection, {host_list}, {command}")
+        play = Play().load(play_source, variable_manager=variable_manager, loader=loader)
 
-            # Remove ansible tmpdir
-            shutil.rmtree(C.DEFAULT_LOCAL_TMP, True)
+        # Actually run it
+        try:
+            result = tqm.run(play)  # most interesting data for a play is actually sent to the callback's methods
+        except Exception as e:
+            print(e)
+        finally:
+            # we always need to cleanup child procs and the structures we use to communicate with them
+            tqm.cleanup()
+            if loader:
+                loader.cleanup_all_tmp_files()
 
-            print("UP ***********")
-            for host, result in results_callback.host_ok.items():
-                print('{0} >>> {1}'.format(host, result._result['stdout']))
+        # Remove ansible tmpdir
+        shutil.rmtree(C.DEFAULT_LOCAL_TMP, True)
 
-            print("FAILED *******")
-            for host, result in results_callback.host_failed.items():
-                print('{0} >>> {1}'.format(host, result._result['msg']))
+        print("UP ***********")
+        for host, result in results_callback.host_ok.items():
+            print('{0} >>> {1}'.format(host, result._result['stdout']))
 
-            print("DOWN *********")
-            for host, result in results_callback.host_unreachable.items():
-                print('{0} >>> {1}'.format(host, result._result['msg']))
+        print("FAILED *******")
+        for host, result in results_callback.host_failed.items():
+            print('{0} >>> {1}'.format(host, result._result['msg']))
 
-            time.sleep(args.padding)
+        print("DOWN *********")
+        for host, result in results_callback.host_unreachable.items():
+            print('{0} >>> {1}'.format(host, result._result['msg']))
+
+        time.sleep(random.randint(args.padding_min, args.padding_max))
 
     # devices = get_interfaces()
     # if args.interface_num:

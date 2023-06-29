@@ -12,3 +12,6 @@ class FaultEvent:
         self.tc_netem.start()
         time.sleep(self.duation)
         self.tc_netem.delete()
+
+    def run_campaign(self, duation):
+        self.tc_netem.start_campaign(duation)
