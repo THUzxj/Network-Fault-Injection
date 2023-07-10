@@ -38,3 +38,16 @@ time.sleep(10)
 # delete the netem qdisc
 tc_netem.delete()
 ```
+
+## Fault Injection with Ansible
+
+
+```bash
+python main.py -i cluster_ansible_inventory -H node0 -p 60 -d 60 --mode network
+```
+
+Fault Injection with random faults.
+
+```bash
+python random_inject.py -i cluster_ansible_inventory -H node0 -pmax 240 -pmin 30 -d 60 
+```

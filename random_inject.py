@@ -93,38 +93,26 @@ def get_args():
 
     return parser.parse_args()
 
-CPU_FAULTS = reversed(["2", "4", "8", "16", "32"])
+# CPU_FAULTS = reversed(["2", "4", "8", "16", "32"])
 
-MEMORY_FAULTS = reversed([1, 2, 4, 6, 8])
+# MEMORY_FAULTS = reversed([1, 2, 4, 6, 8])
 
-DISK_FAULTS = reversed([1, 2, 4, 8, 16])
+# DISK_FAULTS = reversed([1, 2, 4, 8, 16])
 
-NETWORK_FAULTS = [(1000, 0), (1000, 25), (1000, 50), (0, 25), (0, 50)]
+# NETWORK_FAULTS = [(1000, 0), (1000, 25), (1000, 50), (0, 25), (0, 50)]
 
-# FAULTS = [
-#     {
-#         "type": "delay",
-#         "values": [0, 1000, 5000],
-#         "unit": "ms",
-#         "args": "20ms"
-#     },
-#     {
-#         "type": "loss",
-#         "values": [0, 15, 30],
-#         "unit": "%",
-#         "args": "25%"
-#     },
-#     # {
-#     #     "type": "duplicate",
-#     #     "values": [0],
-#     #     "unit": "%",
-#     #     "args": ""
-#     # }
-# ]
+CPU_FAULTS = reversed(["16", "32"])
+
+MEMORY_FAULTS = reversed([6, 8])
+
+DISK_FAULTS = reversed([8, 16])
+
+NETWORK_FAULTS = [(3000, 50)]
 
 
 if __name__ == "__main__":
     args = get_args()
+    args.mode = "random"
 
     if args.log is None:
         os.makedirs(DEFAULT_LOG_PATH, exist_ok=True)
@@ -250,34 +238,3 @@ if __name__ == "__main__":
             print('{0} >>> {1}'.format(host, result._result['msg']))
 
         time.sleep(random.randint(args.padding_min, args.padding_max))
-
-    # devices = get_interfaces()
-    # if args.interface_num:
-    #     devices = devices[:args.interface_num]
-    # logging.info(f"Devices: {devices}")
-
-    # fault_values_sets = list(itertools.product(devices, *[fault["values"] for fault in FAULTS]))
-
-    # fault_values_sets = [fault_values for fault_values in fault_values_sets if sum(fault_values[1:]) != 0]
-
-    # print("The fault injection will take about", calculate_time(args.padding, args.duation, len(fault_values_sets)), "seconds.")
-
-    # try:
-    #     for fault_values in fault_values_sets:
-    #         device = fault_values[0]
-    #         faults = [
-    #             Delay(time=f"{fault_values[1]}ms", jitter="20ms"),
-    #             Loss(rate=f"{fault_values[2]}%", correlation="25%"),
-    #             # Duplicate(rate=f"{fault_values[3]}%")
-    #         ]
-    #         tc_netem = TcNetem(interface=device, faults=faults)
-    #         if args.dry:
-    #             tc_netem.dry_run()
-    #         else:
-    #             fault_event = FaultEvent(tc_netem=tc_netem, duation=args.duation)
-    #             fault_event.run()
-    #             time.sleep(args.padding)
-    # except KeyboardInterrupt:
-    #     logging.info("KeyboardInterrupt")
-    #     tc_netem.delete()
-    #     exit(0)
