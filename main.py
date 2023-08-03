@@ -85,7 +85,9 @@ def get_args():
     parser.add_argument("-g", "--group", type=str)
     parser.add_argument("-H", "--hosts", type=str)
     parser.add_argument("-i", "--inventory", required=True, type=str)
-    parser.add_argument("-m", "--mode", required=True)
+    parser.add_argument("-m", "--mode", required=True, choices=["cpu", "memory", "disk", "network", "blank"], type=str)
+    parser.add_argument("-u", "--user", default="root")
+    parser.add_argument("--stressng_path")
 
     return parser.parse_args()
 
@@ -95,6 +97,7 @@ MEMORY_FAULTS = reversed([1, 2, 4, 6, 8])
 
 DISK_FAULTS = reversed([1, 2, 4, 8, 16])
 
+# delay: ms, loss: percentage
 NETWORK_FAULTS = [(1000, 0), (1000, 25), (1000, 50), (0, 25), (0, 50)]
 
 # FAULTS = [
@@ -134,8 +137,15 @@ if __name__ == "__main__":
                             logging.StreamHandler()
                         ])
     
-    context.CLIARGS = ImmutableDict(connection='smart', module_path=['/to/mymodules', '/usr/share/ansible'], forks=10, become=True,
-                                    become_method="sudo", become_user="root", check=False, diff=False, verbosity=0)
+
+    if args.user == "root":
+        context.CLIARGS = ImmutableDict(connection='smart', module_path=['/to/mymodules', '/usr/share/ansible'], forks=10, become=True,
+                                        become_method="sudo", become_user="root", check=False, diff=False, verbosity=0)
+    elif args.user == "vagrant":
+        context.CLIARGS = ImmutableDict(connection='smart', module_path=['/to/mymodules', '/usr/share/ansible'], forks=10, become=True, check=False, diff=False, verbosity=0)
+    else:
+        context.CLIARGS = ImmutableDict(connection='smart', module_path=['/to/mymodules', '/usr/share/ansible'], forks=10, become=True,
+                                        become_method="sudo", become_user=args.user, check=False, diff=False, verbosity=0)
 
     loader = DataLoader()
 
@@ -159,10 +169,13 @@ if __name__ == "__main__":
     stressNg = StressNg()
 
     if args.mode == "network":
-        devices = get_interfaces()
-        devices = [ device for device in devices if device != "lo" and not device.startswith("v") and not device.startswith("b")]
-        if args.interface_num:
-            devices = devices[:args.interface_num]
+        devices = ["eth0", "eth1"]
+        # TODO: get interfaces from remote servers
+
+        # devices = get_interfaces()
+        # devices = [ device for device in devices if device != "lo" and not device.startswith("v") and not device.startswith("b")]
+        # if args.interface_num:
+        #     devices = devices[:args.interface_num]
         # logging.info(f"Devices: {devices}")
         print(f"Devices: {devices}")
         commands = [TcNetem(interface=device, faults=[
@@ -175,8 +188,66 @@ if __name__ == "__main__":
         commands = [stressNg.memory(vm=fault, vm_bytes="1G", vm_hang=args.duation, timeout=args.duation) for fault in MEMORY_FAULTS]
     elif args.mode == "disk":
         commands = [stressNg.disk(io=fault, hdd=fault, timeout=args.duation) for fault in DISK_FAULTS]
+    elif args.mode == "blank":
+        commands = ["echo 'Hello, World!'"]
 
     print(commands)
+
+    # Prepare the environment/tools for fault injection
+    ## Install stress-ng
+    if args.stressng_path == None:
+        tqm = TaskQueueManager(
+                inventory=inventory,
+                variable_manager=variable_manager,
+                loader=loader,
+                passwords=passwords,
+                stdout_callback=results_callback,  # Use our custom callback instead of the ``default`` callback plugin, which prints to stdout
+        )
+
+        play_source = dict(
+            name="Ansible Play",
+            hosts=host_list,
+            gather_facts='no',
+            tasks=[
+                dict(
+                    action=dict(module='apt',
+                                args=dict(
+                                    name = "stress-ng"
+                                ),
+                            ), register="shell_out"
+                ),
+            ],
+        )
+        play = Play().load(play_source, variable_manager=variable_manager, loader=loader)
+
+        # Actually run it
+        try:
+            result = tqm.run(play)  # most interesting data for a play is actually sent to the callback's methods
+        except Exception as e:
+            print(e)
+        finally:
+            # we always need to cleanup child procs and the structures we use to communicate with them
+            tqm.cleanup()
+            if loader:
+                loader.cleanup_all_tmp_files()
+
+        # Remove ansible tmpdir
+        shutil.rmtree(C.DEFAULT_LOCAL_TMP, True)
+
+        print("UP ***********")
+        for host, result in results_callback.host_ok.items():
+            print('{0} >>> {1}'.format(host, result._result['stdout']))
+
+        print("FAILED *******")
+        for host, result in results_callback.host_failed.items():
+            print('{0} >>> {1}'.format(host, result._result['msg']))
+
+        print("DOWN *********")
+        for host, result in results_callback.host_unreachable.items():
+            print('{0} >>> {1}'.format(host, result._result['msg']))
+
+        time.sleep(args.padding)
+
     
     if args.dry:
         exit(0)
@@ -214,7 +285,7 @@ if __name__ == "__main__":
                 # become="true",
                 # become_user="root"
             )
-            print(play_source)
+            # print(play_source)
             logging.info(f"Start_fault_injection, {host_list}, {command}")
             play = Play().load(play_source, variable_manager=variable_manager, loader=loader)
 
